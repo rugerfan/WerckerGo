@@ -1,0 +1,68 @@
+build:
+  box: alpine
+  docker: true
+  steps:
+    - script:
+        name: Install docker
+        code: apk --no-cache add docker
+    - script:
+        name: Install Curl
+        code: apk --no-cache add curl
+    - script:
+        name: Explore the docker daemon
+        code: |
+          echo DOCKER_NETWORK_NAME=$DOCKER_NETWORK_NAME
+          echo DOCKER_HOST=$DOCKER_HOST
+          echo Running docker version
+          docker version
+          echo running docker ps
+          docker ps
+          echo running docker images
+          docker images
+          echo listing the docker networks
+          docker network list
+    - script:
+        name: create an image from the Dockerfile using docker build
+        code: |
+          docker build -t docker.io/$USERNAME/direct-docker-golang:latest .
+          echo running docker images
+          docker images
+    - script:
+        name: start the newly-created image using docker run
+        code: |
+          docker run --rm -d -p 5000:5000 --name testcontainer \
+            --network=$DOCKER_NETWORK_NAME docker.io/$USERNAME/direct-docker-golang:latest
+          echo running docker ps
+          docker ps
+    - script:
+        name: Wait for container to start
+        code: |
+          until $(curl --output /dev/null --silent --head --fail http://testcontainer:5000); do printf '.'; sleep 5; done
+          
+    - script:
+        name: Test the container that we started using docker-run
+        code: |
+            if curlOutput=`curl -s testcontainer:5000`; then
+                export expected="Hello World!!!"
+                if [ "$curlOutput" == "$expected" ]; then
+                    echo "Test passed: container gave expected response: " $expected
+                else
+                    echo "Test failed: container gave unexpected response: " $curlOutput
+                    echo "The expected reponse was: " $expected
+                    exit 1
+                fi
+            else
+                echo "Test failed: container did not respond"
+                exit 1
+            fi
+    - script:
+        name: kill the container using docker kill
+        code: |
+          docker kill testcontainer
+          echo running docker ps
+          docker ps
+    - script:
+        name: push the newly-created image to a repository
+        code: |
+          docker login -u $USERNAME -p $PASSWORD
+          docker push docker.io/$USERNAME/direct-docker-golang:latest
